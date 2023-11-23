@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Koha" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Define los colores de la barra de estado y la barra de navegación. -->
+        <item name="android:statusBarColor">@color/status_bar_color</item>
+        <item name="android:navigationBarColor">@color/navigation_bar_color</item>
+        <!-- Si deseas que los íconos de la barra de estado sean claros (para fondos oscuros) -->
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+</resources>
