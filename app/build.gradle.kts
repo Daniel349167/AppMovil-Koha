@@ -65,6 +65,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.9.1") // Cliente HTTP OkHttp
     implementation("com.google.code.gson:gson:2.9.0")
     implementation("androidx.compose.foundation:foundation-android:1.5.3")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.3.1") // Usa la versión más reciente
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.3.1") // Usa la versión más reciente
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.3.1") // Usa la versión más reciente
+    implementation("androidx.compose.runtime:runtime-livedata:1.0.0") // Asegúrate de que coincida con tu versión de Compose
+
 
 
 

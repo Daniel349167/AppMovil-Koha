@@ -5,6 +5,7 @@
         <!-- Define los colores de la barra de estado y la barra de navegación. -->
         <item name="android:statusBarColor">@color/status_bar_color</item>
         <item name="android:navigationBarColor">@color/navigation_bar_color</item>
+        <item name="android:colorPrimaryDark">@color/your_primary_dark_color</item>
         <!-- Si deseas que los íconos de la barra de estado sean claros (para fondos oscuros) -->
         <item name="android:windowLightStatusBar">true</item>
     </style>

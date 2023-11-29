@@ -1,7 +1,6 @@
 package com.example.koha
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.example.koha.ui.theme.KohaTheme
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,9 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.paddingFromBaseline
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -33,17 +29,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.lifecycleScope
-import com.google.gson.Gson
-import com.google.gson.JsonSyntaxException
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.*
@@ -58,13 +48,25 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import kotlinx.coroutines.CoroutineScope
+import androidx.compose.foundation.layout.Box
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.lifecycle.ViewModelProvider
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.platform.LocalContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
-import java.io.IOException
-import android.media.MediaPlayer
-import androidx.compose.ui.graphics.toArgb
-import androidx.core.view.WindowCompat
-import androidx.core.graphics.ColorUtils
-import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
+
+
+
 
 data class LoanRequest(
     val request_id: String,
@@ -85,23 +87,19 @@ data class LoanRequest(
 
 class MainActivity : ComponentActivity() {
 
+    private lateinit var viewModel: LoanRequestViewModel
+
     @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.isAppearanceLightStatusBars = true // Establece íconos de la barra de estado claros u oscuros
-
-        window.statusBarColor = Color(0xFF64B5F6).toArgb() // Establece el color de la barra de estado
-        val loanRequests = mutableStateOf(mutableListOf<LoanRequest>())
+        viewModel = ViewModelProvider(this).get(LoanRequestViewModel::class.java)
 
         // Actualizar la lista al inicio y en intervalos
         lifecycleScope.launch {
             while (true) {
-                updateLoanRequests(loanRequests, lifecycleScope, this@MainActivity)
+                viewModel.updateLoanRequests(this@MainActivity)
                 delay(6000)
             }
         }
@@ -118,25 +116,33 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 ) {
-                    Column(modifier = Modifier.padding(top = 56.dp)) {
-                        Spacer(modifier = Modifier.height(45.dp))
-
-                        // Contenido principal
-                        ItemList(requests = loanRequests.value, updateList = { updateLoanRequests(loanRequests, lifecycleScope, this@MainActivity) })
+                    Box(modifier = Modifier.padding(bottom = 1.dp)) {
+                        LoanRequestListScreen(viewModel)
                     }
                 }
             }
         }
-
     }
+}
 
+@Composable
+fun LoanRequestListScreen(viewModel: LoanRequestViewModel) {
+    val loanRequests = viewModel.loanRequests.observeAsState(listOf())
+    val context = LocalContext.current
 
+    Column(modifier = Modifier
+        .padding(top = 14.dp)
+        .padding(bottom = 5.dp)) {
+        Spacer(modifier = Modifier.height(50.dp))
 
+        // Contenido principal
+        ItemList(requests = loanRequests.value) { viewModel.updateLoanRequests(context) }
+    }
 }
 
 
 @Composable
-fun ItemList(requests: MutableList<LoanRequest>, updateList: () -> Unit) {  // Añadir parámetro updateList
+fun ItemList(requests: List<LoanRequest>, updateList: () -> Unit) {  // Añadir parámetro updateList
 
     LazyColumn {
         items(requests) { request ->
@@ -146,59 +152,112 @@ fun ItemList(requests: MutableList<LoanRequest>, updateList: () -> Unit) {  // A
     }
 }
 
+
 @Composable
-fun LoanRequestItem(request: LoanRequest, loanRequests: MutableList<LoanRequest>, updateList: () -> Unit) { // Añadir un callback para actualizar la lista
-    val offsetX = remember { mutableStateOf(0f) }
+fun LoanRequestItem(request: LoanRequest, loanRequests: List<LoanRequest>, updateList: () -> Unit) {
+    var offsetX = remember { mutableStateOf(0f) }
     var showDialog by remember { mutableStateOf(false) }
+    var dragStarted = remember { mutableStateOf(false) }
+    var verticalDragInProgress = remember { mutableStateOf(false) }
+
+
+
 
     if (showDialog) {
         AlertDialog(
-            title = { Text("Eliminar Solicitud") },
-            text = { Text("Está seguro de eliminar?") },
             onDismissRequest = {
                 showDialog = false
             },
+            title = {
+                Column {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = "Alert Icon",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Eliminar Solicitud",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            text = {
+                Text(
+                    "¿Está seguro de eliminar esta solicitud?",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val success = deleteRequest(request.request_id)
-                        withContext(Dispatchers.Main) {
-                            if (success) {
-                                updateList() // Llama al callback para actualizar la lista
-                                offsetX.value = 0f
-                                showDialog = false
-                            } else {
-                                // Mostrar algún mensaje de error o hacer algo si la eliminación falla
+                TextButton(
+                    onClick = {
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val success = deleteRequest(request.request_id)
+                            withContext(Dispatchers.Main) {
+                                if (success) {
+                                    updateList() // Llama al callback para actualizar la lista
+                                    offsetX.value = 0f
+                                    showDialog = false
+                                } else {
+                                    // Mostrar algún mensaje de error o hacer algo si la eliminación falla
+                                }
                             }
                         }
                     }
-                }) {
-                    Text("Si")
+                ) {
+                    Text("Eliminar", style = MaterialTheme.typography.labelLarge)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDialog = false }) {
-                    Text("No")
+                TextButton(
+                    onClick = { showDialog = false }
+                ) {
+                    Text("Cancelar", style = MaterialTheme.typography.labelLarge)
                 }
-            }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     }
+
+
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .height(150.dp)
             .padding(8.dp)
-            .graphicsLayer(
-                translationX = offsetX.value
-            )
+            .graphicsLayer(translationX = offsetX.value)
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    if (abs(dragAmount.x) > abs(dragAmount.y)) {  // Detectar movimientos horizontales
-                        change.consume()
-                        offsetX.value += dragAmount.x
+                detectDragGestures(
+                    onDragStart = {
+                        dragStarted.value = true
+                        verticalDragInProgress.value = false
+                    },
+                    onDragEnd = {
+                        dragStarted.value = false
+                        // Mueve la lógica de verificación aquí
+                        if (abs(offsetX.value) > 50f) {
+                            showDialog = true
+                            offsetX.value = 0f
+                        } else {
+                            offsetX.value = 0f
+                        }
+                    },
+                    onDrag = { change, dragAmount ->
+                        if (dragStarted.value && !verticalDragInProgress.value) {
+                            if (abs(dragAmount.y) > abs(dragAmount.x)) {
+                                verticalDragInProgress.value = true
+                            } else {
+                                val newOffset = offsetX.value + dragAmount.x
+                                if (offsetX.value >= 0f) {
+                                        offsetX.value = newOffset
+                                }
+                                change.consume()
+                            }
+                        }
                     }
-                }
+                )
             },
         shape = RoundedCornerShape(10.dp)
     ) {
@@ -225,86 +284,80 @@ fun LoanRequestItem(request: LoanRequest, loanRequests: MutableList<LoanRequest>
                     style = TextStyle(fontWeight = FontWeight.Bold, color = Color.Red)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Título: ${request.title}")
+                Text(
+                    buildAnnotatedString {
+                        withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append("Título: ")
+                        }
+                        append("${request.title}")
+                    }
+                )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Autor: ${request.author}")
+                Text(
+                    buildAnnotatedString {
+                        withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append("Autor: ")
+                        }
+                        append("${request.author}")
+                    }
+                )
                 Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            Spacer(modifier = Modifier.width(25.dp))
+
+            Column(
+                horizontalAlignment = Alignment.End
+            ) {0
+                val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                val timestamp = dateFormat.parse(request.timestamp)
+
+                val now = Calendar.getInstance().time
+                val duration = now.time - timestamp.time // tiempo en milisegundos
+
+                val totalMinutes = duration / (1000 * 60)
+                val days = totalMinutes / (24 * 60)
+                val remainingHours = (totalMinutes % (24 * 60)) / 60
+                val remainingMinutes = totalMinutes % 60
+
+                val tiempoTexto = when {
+                    days > 0 -> "$days día${if (days != 1.toLong()) "s" else ""} y $remainingHours hora${if (remainingHours != 1.toLong()) "s" else ""}"
+                    remainingHours > 0 -> "$remainingHours hora${if (remainingHours != 1.toLong()) "s" else ""} y $remainingMinutes minuto${if (remainingMinutes != 1.toLong()) "s" else ""}"
+                    remainingMinutes > 0 -> "$remainingMinutes minuto${if (remainingMinutes != 1.toLong()) "s" else ""}"
+                    else -> "menos de un minuto"
+                }
+
+
+
+                Text(
+                    text = "${request.firstname} ${request.surname}",
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Start
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Column {
+
+                Text(
+                    text = "Solicitado hace:",
+                    color = Color(0xFF006400),
+                    textAlign = TextAlign.Start
+                )
+                Text(
+                    text = tiempoTexto,
+                    color = Color(0xFF006400),
+                    textAlign = TextAlign.Start
+                )
                 Text(
                     text = "Tipo: ${request.tipo}",
                     color = Color(0xFF0000FF)
                 )
-            }
-
-            Column(
-                horizontalAlignment = Alignment.End
-            ) {
-                Text(
-                    text = "${request.firstname} ${request.surname}",
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                // Código para calcular días y horas
-                val horas = extractHours(request.tiempo)
-                val days = horas / 24
-                val remainingHours = horas % 24
-
-                val tiempoTexto = if (days > 0) {
-                    "$days día${if (days > 1) "s" else ""} y $remainingHours hora${if (remainingHours > 1) "s" else ""}"
-                } else {
-                    "$horas hora${if (horas > 1) "s" else ""}"
                 }
-
-                Text(
-                    text = "Solicitado hace: $tiempoTexto",
-                    color = Color(0xFF006400),
-                    textAlign = TextAlign.End
-                )
-            }
-        }
-    }
-
-    LaunchedEffect(offsetX.value) {
-        if (abs(offsetX.value) > 200f) {
-            showDialog = true  // Mostrar el cuadro de diálogo
-            offsetX.value = 0f  // Reiniciar el desplazamiento
-        }
-    }
-}
-fun extractHours(timeString: String): Int {
-    return timeString.split(" ")[0].toInt()
-}
-
-suspend fun fetchLoanRequests(): List<LoanRequest>? {
-    val client = OkHttpClient()
-    val request = Request.Builder()
-        //.url("http://procesos.uni.edu.pe/request.php?action=getList")
-        .url("http://172.16.28.51:802/request.php?action=getList")
-        .build()
-
-    return try {
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                println("Error HTTP: ${response.code}")
-                return null
             }
 
-            val jsonResult = response.body?.string()
-            println("Resultado JSON: $jsonResult")
-
-            val listType = object : TypeToken<ResponseWrapper>() {}.type
-            val wrapper = Gson().fromJson<ResponseWrapper>(jsonResult, listType)
-            wrapper?.requests
         }
-    } catch (e: IOException) {
-        println("Error al realizar la solicitud: ${e.message}")
-        null
-    } catch (e: JsonSyntaxException) {
-        println("Error al deserializar el JSON: ${e.message}")
-        null
     }
+
 }
-
-
 
 suspend fun deleteRequest(requestId: String): Boolean {
     val client = OkHttpClient()
@@ -334,6 +387,13 @@ suspend fun deleteRequest(requestId: String): Boolean {
         return false
     }
 }
+fun extractHours(timeString: String): Int {
+    return timeString.split(" ")[0].toInt()
+}
+
+
+
+
 
 
 
@@ -341,25 +401,3 @@ data class ResponseWrapper(
     val requests: List<LoanRequest>
 )
 
-
-fun updateLoanRequests(loanRequests: MutableState<MutableList<LoanRequest>>, scope: CoroutineScope, context: Context) {
-    scope.launch {
-        val previousSize = loanRequests.value.size
-        val newLoanRequests = withContext(Dispatchers.IO) { fetchLoanRequests() }
-        loanRequests.value = newLoanRequests?.toMutableList() ?: mutableListOf()
-
-        // Reproducir sonido si hay nuevos pedidos
-        if (loanRequests.value.size > previousSize) {
-            playNotificationSound(context)
-        }
-    }
-}
-
-private fun playNotificationSound(context: Context) {
-    val mediaPlayer: MediaPlayer = MediaPlayer.create(context, R.raw.sound2)
-    mediaPlayer.start()
-    println("suena")
-    mediaPlayer.setOnCompletionListener {
-        it.release()
-    }
-}
